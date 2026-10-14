@@ -2,7 +2,7 @@
 ## explicit; go 1.27.1
 github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage
 github.com/VictoriaMetrics/VictoriaLogs/lib/prefixfilter
-# github.com/VictoriaMetrics/VictoriaMetrics v1.152.1-0.20260924162003-018bc7808882
+# github.com/VictoriaMetrics/VictoriaMetrics v1.153.0
 ## explicit; go 1.27.1
 github.com/VictoriaMetrics/VictoriaMetrics/lib/atomicutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/blockcache
