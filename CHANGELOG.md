@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-13)
 
 The first release: a relay between UniFi and VictoriaLogs that fills in the message VictoriaLogs leaves out of UniFi's events.
 
