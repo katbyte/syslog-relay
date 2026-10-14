@@ -24,7 +24,7 @@ Dependencies are vendored. The dev tools are pinned in `.tools/go.mod` and the m
 | `cli` | the commands and settings |
 | `acceptance` | the live tests of the image |
 
-The readings page, `/metrics`, `/healthz` and the labels are [go-kt](https://github.com/katbyte/go-kt)'s `pmetrics`, shared with the other tools that serve one.
+The readings page, `/metrics`, `/healthz` and the labels are [go-kt](https://github.com/katbyte/go-kt)'s `pmetrics`, shared with the other tools that serve one. Rows go to VictoriaLogs through go-kt's `chttp`, so `SYSLOG_RELAY_LOG=TRACE` shows each request and answer.
 
 ## The pinned VictoriaLogs
 

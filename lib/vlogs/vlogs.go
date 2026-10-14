@@ -5,9 +5,7 @@ package vlogs
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katbyte/go-kt/chttp"
 	"github.com/katbyte/go-kt/clog"
 )
 
@@ -26,6 +25,8 @@ const (
 	requestTimeout  = 30 * time.Second
 	// finalTimeout is how long what is still held is tried for when the relay stops.
 	finalTimeout = 10 * time.Second
+	// maxAnswer is the most of VictoriaLogs' answer that is read: it says nothing when it takes rows, and a line or two when it does not.
+	maxAnswer = 64 * 1024
 )
 
 // Path is where VictoriaLogs takes JSON lines.
@@ -41,8 +42,6 @@ type Options struct {
 	QueueSize int
 	// Interval is how often held rows are sent; zero is DefaultInterval.
 	Interval time.Duration
-	// Client sends the requests; nil is one of its own.
-	Client *http.Client
 }
 
 // Stats are the counts of rows since the sender was made.
@@ -59,7 +58,7 @@ type Sender struct {
 	endpoint  string
 	queueSize int
 	interval  time.Duration
-	client    *http.Client
+	client    *chttp.Client
 
 	mu    sync.Mutex
 	queue [][]byte // oldest first
@@ -85,12 +84,12 @@ func New(o Options) (*Sender, error) {
 	u.Path = strings.TrimRight(u.Path, "/") + Path
 	u.RawQuery = q.Encode()
 
-	s := &Sender{endpoint: u.String(), queueSize: o.QueueSize, interval: o.Interval, client: o.Client}
+	// each batch is sent once: one that is not taken is held and sent again with the next, so trying again here would only hold the rest up
+	client := chttp.New(chttp.Options{Name: "VictoriaLogs", Log: clog.Log, Retry: chttp.Retry{Tries: 1}})
+
+	s := &Sender{endpoint: u.String(), queueSize: o.QueueSize, interval: o.Interval, client: client}
 	if s.interval <= 0 {
 		s.interval = DefaultInterval
-	}
-	if s.client == nil {
-		s.client = &http.Client{Timeout: requestTimeout}
 	}
 
 	return s, nil
@@ -166,12 +165,11 @@ func (s *Sender) Flush(ctx context.Context) error {
 
 		err := s.post(ctx, batch)
 
-		var refused *RefusedError
 		switch {
 		case err == nil:
 			s.sent.Add(uint64(len(batch)))
 			s.recovered()
-		case errors.As(err, &refused):
+		case refused(err):
 			// sending the same rows again would be refused again, and hold up every row behind them
 			s.failures.Add(1)
 			s.dropped.Add(uint64(len(batch)))
@@ -227,15 +225,12 @@ func (s *Sender) recovered() {
 	}
 }
 
-// RefusedError is VictoriaLogs answering that it will not take what it was sent, as a bad request or one too large: the rows themselves are at
-// fault, not its being there.
-type RefusedError struct {
-	Status int
-	Body   string
-}
+// refused is whether VictoriaLogs answered that it will not take what it was sent, as a bad request or one too large: the rows themselves are at
+// fault, not its being there. A 404 is not one: the address is wrong, which holding the rows gives time to put right.
+func refused(err error) bool {
+	code := chttp.StatusCode(err)
 
-func (e *RefusedError) Error() string {
-	return fmt.Sprintf("answered %d: %s", e.Status, e.Body)
+	return code == http.StatusBadRequest || code == http.StatusRequestEntityTooLarge
 }
 
 // post sends one batch.
@@ -249,23 +244,14 @@ func (s *Sender) post(ctx context.Context, batch [][]byte) error {
 	}
 	req.Header.Set("Content-Type", "application/stream+json")
 
-	resp, err := s.client.Do(req)
+	resp, answer, err := s.client.Fetch(req, maxAnswer) //nolint:bodyclose // Fetch hands the response back with its body read and closed
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	// what it says about a fault is short; the rest is read so the connection can be used again
-	said, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return nil
-	// only these say the rows are at fault: a 404 is an address that is wrong, which holding the rows gives time to put right
-	case resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusRequestEntityTooLarge:
-		return &RefusedError{Status: resp.StatusCode, Body: strings.TrimSpace(string(said))}
-	default:
-		return fmt.Errorf("answered %d: %s", resp.StatusCode, strings.TrimSpace(string(said)))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return &chttp.StatusError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode, Body: chttp.Preview(answer)}
 	}
+
+	return nil
 }

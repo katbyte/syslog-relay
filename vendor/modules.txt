@@ -60,6 +60,7 @@ github.com/gookit/color
 github.com/inconshreveable/mousetrap
 # github.com/katbyte/go-kt v0.7.0
 ## explicit; go 1.27.0
+github.com/katbyte/go-kt/chttp
 github.com/katbyte/go-kt/clog
 github.com/katbyte/go-kt/pmetrics
 github.com/katbyte/go-kt/pointer

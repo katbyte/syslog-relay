@@ -87,7 +87,7 @@ Only `SYSLOG_RELAY_LOGS_URL` has to be given. Each can be a flag, an environment
 | `SYSLOG_RELAY_RAW_MAX_MB` | `--raw-max-mb` | `100` | stop adding to the raw copy at this size |
 | `SYSLOG_RELAY_METRICS_LISTEN` | `--metrics-listen` | `:9124` | where the relay's own readings and health check are served |
 | `SYSLOG_RELAY_LABELS` | `--labels` | none | labels for the relay's own readings, as `name=value,name=value` |
-| `SYSLOG_RELAY_LOG` | | `WARN` | log level: `INFO` or `DEBUG` say more |
+| `SYSLOG_RELAY_LOG` | | `WARN` | log level: `INFO` or `DEBUG` say more, and `TRACE` shows every request to VictoriaLogs |
 | `SYSLOG_RELAY_CONFIG` | `--config` | | the one settings file to read |
 
 The settings file is `./.syslog-relay` or `~/.syslog-relay`. Its keys are the variable names without `SYSLOG_RELAY_`:

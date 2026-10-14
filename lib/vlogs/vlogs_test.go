@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/katbyte/go-kt/chttp"
 )
 
 // fakeLogs is a VictoriaLogs that keeps what it is sent, and answers with the status it is told.
@@ -82,7 +84,7 @@ func started(t *testing.T, queueSize int) (*fakeLogs, *Sender) {
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 
-	s, err := New(Options{URL: srv.URL, StreamFields: []string{"hostname", "app_name"}, QueueSize: queueSize, Client: srv.Client()})
+	s, err := New(Options{URL: srv.URL, StreamFields: []string{"hostname", "app_name"}, QueueSize: queueSize})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,8 +161,9 @@ func TestHeldWhileDown(t *testing.T) {
 			f.answer(status)
 
 			s.Add(row(0))
-			if err := s.Flush(t.Context()); err == nil {
-				t.Fatal("Flush gave no error while VictoriaLogs answered with a fault")
+			err := s.Flush(t.Context())
+			if chttp.StatusCode(err) != status || !strings.Contains(err.Error(), "said no") {
+				t.Fatalf("Flush = %v while VictoriaLogs answered %d, want an error with its status and what it said", err, status)
 			}
 			s.Add(row(1))
 			if err := s.Flush(t.Context()); err == nil {
@@ -287,7 +290,7 @@ func TestRun(t *testing.T) {
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 
-	s, err := New(Options{URL: srv.URL, QueueSize: 10, Interval: 10 * time.Millisecond, Client: srv.Client()})
+	s, err := New(Options{URL: srv.URL, QueueSize: 10, Interval: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
