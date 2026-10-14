@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.tools/bin
+.tools/venv
+.tools/npm
+.coverage
+dist
+syslog-relay
+*.md
+docker-compose.yml
+.env*
+*.raw
+raw

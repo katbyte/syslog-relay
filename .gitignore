@@ -1,0 +1,15 @@
+.claude/
+.DS_Store
+.idea/
+dist/
+/syslog-relay
+.tools/bin/
+.tools/venv/
+.tools/npm/
+__pycache__/
+.env
+.syslog-relay
+.coverage/
+# raw copies of what UniFi sent: names, IP and MAC addresses, never committed
+*.raw
+raw/

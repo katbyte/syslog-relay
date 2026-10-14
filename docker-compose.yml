@@ -1,0 +1,51 @@
+# Default always-on deployment: runs the released image from ghcr.io beside VictoriaLogs. UniFi
+# sends its syslog here, on 1514, and the relay sends it on to VictoriaLogs with every event's
+# message filled in. To run a local build instead: make docker, then set image: syslog-relay (or
+# add build: .). The image's own healthcheck asks /healthz on the default readings port; add a
+# healthcheck here if SYSLOG_RELAY_METRICS_LISTEN names another.
+#
+# The settings below match a VictoriaLogs run with -syslog.useLocalTimestamp, -syslog.useRemoteIP
+# and TZ=America/Vancouver, so a row from the relay holds what that VictoriaLogs stores itself,
+# with a message. Give them the values your own VictoriaLogs runs with.
+
+networks:
+  net:
+    name: net
+
+services:
+  syslog-relay:
+    image: ghcr.io/katbyte/syslog-relay:v0.1.0
+    container_name: syslog-relay
+    hostname: syslog-relay
+    restart: always
+    networks:
+      net:
+    ports:
+      # syslog from the network: point UniFi's SIEM server or remote logging at this host, port 1514
+      - "1514:1514/udp"
+      - "1514:1514/tcp"
+      # only the host itself can reach the readings: whatever scrapes them runs there
+      - "127.0.0.1:9124:9124"
+    environment:
+      - "TZ=America/Vancouver"
+      - "SYSLOG_RELAY_LOGS_URL=http://10.0.0.2:9428"
+      - "SYSLOG_RELAY_MSG_FIELD=message,cef.extension.msg"
+      - "SYSLOG_RELAY_USE_LOCAL_TIMESTAMP=true"
+      - "SYSLOG_RELAY_USE_REMOTE_IP=true"
+      # take off the double quotes UniFi Protect puts around every message
+      - "SYSLOG_RELAY_STRIP_QUOTES=true"
+      - "SYSLOG_RELAY_LOG=INFO"
+      # - "SYSLOG_RELAY_STREAM_FIELDS=hostname,app_name"   # VictoriaLogs' own syslog list unless given
+      # - "SYSLOG_RELAY_TIMEZONE=America/Vancouver"        # the zone a time written without one is read in; Local is TZ's
+      # - "SYSLOG_RELAY_QUEUE_SIZE=100000"                 # rows held while VictoriaLogs cannot be reached
+      # - "SYSLOG_RELAY_LABELS=hostname=dock"              # labels on the relay's own readings
+      # a raw copy of every line, to send again later; the folder must be writable by uid 65532.
+      # it names people and devices and holds their IP and MAC addresses
+      # - "SYSLOG_RELAY_RAW_FILE=/raw/unifi.raw"
+      # - "SYSLOG_RELAY_RAW_MAX_MB=100"
+    # volumes:
+    #   - ./raw:/raw
+    logging:
+      options:
+        max-size: 100m
+        max-file: "1"

@@ -1,0 +1,60 @@
+version: 2
+
+project_name: syslog-relay
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -mod=vendor
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    # it runs beside VictoriaLogs, which is a Linux server, and is shipped for it as an image
+    goos:
+      - linux
+    goarch:
+      - '386'
+      - amd64
+      - arm
+      - arm64
+      - riscv64
+    goarm:
+      - '6'
+      - '7'
+    ldflags:
+      - -s -w
+      - -X github.com/katbyte/go-kt/version.Version={{ .Tag }}
+      - -X github.com/katbyte/go-kt/version.GitCommit={{ .ShortCommit }}
+
+archives:
+  - formats: [tar.gz]
+
+# multi-arch image pushed to ghcr.io on release (needs docker login + buildx in the workflow).
+# tags: v1.2.3, v1.2 and latest (latest skipped for prereleases such as v1.2.3-rc1)
+dockers_v2:
+  - images:
+      - ghcr.io/katbyte/syslog-relay
+    dockerfile: Dockerfile.goreleaser
+    tags:
+      - '{{ .Tag }}'
+      - 'v{{ .Major }}.{{ .Minor }}'
+      - '{{ if not .Prerelease }}latest{{ end }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    annotations:
+      org.opencontainers.image.title: '{{ .ProjectName }}'
+      org.opencontainers.image.description: 'Syslog relay that fills in the message VictoriaLogs leaves out of UniFi CEF events'
+      org.opencontainers.image.source: 'https://github.com/katbyte/syslog-relay'
+      org.opencontainers.image.version: '{{ .Version }}'
+      org.opencontainers.image.revision: '{{ .FullCommit }}'
+      org.opencontainers.image.licenses: 'GPL-3.0-only'
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  filters:
+    exclude:
+      - '^Bump '
+      - 'merge main'

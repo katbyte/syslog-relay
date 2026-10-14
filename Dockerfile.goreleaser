@@ -1,0 +1,18 @@
+# Used by goreleaser (dockers_v2 in .goreleaser.yaml) to publish ghcr.io/katbyte/syslog-relay on
+# tag: the build context holds the prebuilt binary per platform, so this only copies it onto
+# alpine. Dockerfile (from source) is what make docker uses; keep the two final stages in sync.
+# alpine comes from Google's mirror of Docker Hub, which does not turn a shared release runner
+# away for having pulled too much (see release.yaml).
+FROM mirror.gcr.io/library/alpine:3.24
+RUN apk add --no-cache ca-certificates tzdata \
+    && adduser -D -H -u 65532 relay
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/syslog-relay /usr/local/bin/syslog-relay
+USER relay
+ENV SYSLOG_RELAY_LISTEN=:1514
+ENV SYSLOG_RELAY_METRICS_LISTEN=:9124
+EXPOSE 1514/udp 1514/tcp 9124
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+  CMD wget -q --spider http://127.0.0.1:9124/healthz || exit 1
+ENTRYPOINT ["syslog-relay"]
+CMD ["serve"]
