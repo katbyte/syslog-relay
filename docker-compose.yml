@@ -14,7 +14,7 @@ networks:
 
 services:
   syslog-relay:
-    image: ghcr.io/katbyte/syslog-relay:v0.1.0
+    image: ghcr.io/katbyte/syslog-relay:v0.2.0
     container_name: syslog-relay
     hostname: syslog-relay
     restart: always

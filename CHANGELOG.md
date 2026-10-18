@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-18)
 
 - **Fields of your own can be added to every row**, with `SYSLOG_RELAY_EXTRA_FIELDS`, as VictoriaLogs' `-syslog.extraFields` adds them: `site=home`, say. Each replaces any field of the same name in the line.
 - **A field can be given the value of another**, with `SYSLOG_RELAY_COPY_FIELDS`: `site=cef.extension.UNIFIsite` gives every UniFi Network event a plain `site` field naming its UniFi site. VictoriaLogs has no such setting.
