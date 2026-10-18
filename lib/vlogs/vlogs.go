@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katbyte/go-kt/chttp"
 	"github.com/katbyte/go-kt/clog"
+	"github.com/katbyte/go-kt/httpc"
 )
 
 // The defaults: rows are sent every second, a batch is at most a few megabytes, and a VictoriaLogs that does not answer within half a minute has
@@ -58,7 +58,7 @@ type Sender struct {
 	endpoint  string
 	queueSize int
 	interval  time.Duration
-	client    *chttp.Client
+	client    *httpc.Client
 
 	mu    sync.Mutex
 	queue [][]byte // oldest first
@@ -85,7 +85,7 @@ func New(o Options) (*Sender, error) {
 	u.RawQuery = q.Encode()
 
 	// each batch is sent once: one that is not taken is held and sent again with the next, so trying again here would only hold the rest up
-	client := chttp.New(chttp.Options{Name: "VictoriaLogs", Log: clog.Log, Retry: chttp.Retry{Tries: 1}})
+	client := httpc.New(httpc.Options{Name: "VictoriaLogs", Log: clog.Log, Retry: httpc.Retry{Tries: 1}})
 
 	s := &Sender{endpoint: u.String(), queueSize: o.QueueSize, interval: o.Interval, client: client}
 	if s.interval <= 0 {
@@ -228,7 +228,7 @@ func (s *Sender) recovered() {
 // refused is whether VictoriaLogs answered that it will not take what it was sent, as a bad request or one too large: the rows themselves are at
 // fault, not its being there. A 404 is not one: the address is wrong, which holding the rows gives time to put right.
 func refused(err error) bool {
-	code := chttp.StatusCode(err)
+	code := httpc.StatusCode(err)
 
 	return code == http.StatusBadRequest || code == http.StatusRequestEntityTooLarge
 }
@@ -250,7 +250,7 @@ func (s *Sender) post(ctx context.Context, batch [][]byte) error {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return &chttp.StatusError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode, Body: chttp.Preview(answer)}
+		return &httpc.StatusError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode, Body: httpc.Preview(answer)}
 	}
 
 	return nil

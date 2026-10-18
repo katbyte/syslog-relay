@@ -112,7 +112,7 @@ Served at `/metrics` on port 9124, with a health check at `/healthz`. Every read
 | `syslog_relay_send_failures_total` | | times VictoriaLogs could not be reached, or answered with a fault |
 | `syslog_relay_rows_dropped_total` | | rows given up on: the oldest past `SYSLOG_RELAY_QUEUE_SIZE`, and any VictoriaLogs refused as bad |
 | `syslog_relay_rows_queued` | | rows waiting to be sent |
-| `syslog_relay_metrics_build_info` | `version`, `commit`, `goversion` | always 1; the version of the relay |
+| `syslog_relay_build_info` | `version`, `commit`, `goversion` | always 1; the version of the relay |
 
 A few things to ask of them:
 

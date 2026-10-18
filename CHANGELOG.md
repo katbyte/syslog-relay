@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (unreleased)
+
+- **Lines received over UDP and over TCP are on the page from the start**, at 0 until one arrives, where neither was until a line came over it. An alert on UniFi going quiet now fires for a relay that was never sent anything.
+- **The reading that says which version is running is `syslog_relay_build_info`**, where it was `syslog_relay_metrics_build_info`. A dashboard or alert that reads the old name needs the new one.
+- Built on go-kt 0.9.0, which renamed the metrics page and HTTP client the relay uses.
+
 ## 0.1.0 (2026-10-13)
 
 The first release: a relay between UniFi and VictoriaLogs that fills in the message VictoriaLogs leaves out of UniFi's events.

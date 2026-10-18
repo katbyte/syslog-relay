@@ -1,4 +1,4 @@
-package pmetrics
+package metrics
 
 import (
 	"fmt"

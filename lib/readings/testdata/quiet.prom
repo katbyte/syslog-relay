@@ -1,0 +1,23 @@
+# HELP syslog_relay_lines_received_total Syslog lines received.
+# TYPE syslog_relay_lines_received_total counter
+syslog_relay_lines_received_total{protocol="tcp"} 0
+syslog_relay_lines_received_total{protocol="udp"} 0
+# HELP syslog_relay_lines_rejected_total Lines dropped because the time written in them could not be read, as VictoriaLogs drops them.
+# TYPE syslog_relay_lines_rejected_total counter
+syslog_relay_lines_rejected_total 0
+# HELP syslog_relay_read_failures_total Times what a sender sent could not be read as syslog: a line too long, or cut off.
+# TYPE syslog_relay_read_failures_total counter
+syslog_relay_read_failures_total{protocol="tcp"} 0
+syslog_relay_read_failures_total{protocol="udp"} 0
+# HELP syslog_relay_rows_dropped_total Rows given up on: the oldest beyond what is held while VictoriaLogs cannot be reached, and any it refused.
+# TYPE syslog_relay_rows_dropped_total counter
+syslog_relay_rows_dropped_total 0
+# HELP syslog_relay_rows_queued Rows waiting to be sent.
+# TYPE syslog_relay_rows_queued gauge
+syslog_relay_rows_queued 0
+# HELP syslog_relay_rows_sent_total Rows VictoriaLogs took.
+# TYPE syslog_relay_rows_sent_total counter
+syslog_relay_rows_sent_total 0
+# HELP syslog_relay_send_failures_total Times VictoriaLogs could not be reached, or answered with a fault.
+# TYPE syslog_relay_send_failures_total counter
+syslog_relay_send_failures_total 0

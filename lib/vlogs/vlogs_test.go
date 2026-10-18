@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katbyte/go-kt/chttp"
+	"github.com/katbyte/go-kt/httpc"
 )
 
 // fakeLogs is a VictoriaLogs that keeps what it is sent, and answers with the status it is told.
@@ -162,7 +162,7 @@ func TestHeldWhileDown(t *testing.T) {
 
 			s.Add(row(0))
 			err := s.Flush(t.Context())
-			if chttp.StatusCode(err) != status || !strings.Contains(err.Error(), "said no") {
+			if httpc.StatusCode(err) != status || !strings.Contains(err.Error(), "said no") {
 				t.Fatalf("Flush = %v while VictoriaLogs answered %d, want an error with its status and what it said", err, status)
 			}
 			s.Add(row(1))

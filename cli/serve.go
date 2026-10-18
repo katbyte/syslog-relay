@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/katbyte/go-kt/clog"
-	"github.com/katbyte/go-kt/pmetrics"
+	"github.com/katbyte/go-kt/prometheus/metrics"
 	"github.com/katbyte/syslog-relay/lib/listen"
 	"github.com/katbyte/syslog-relay/lib/relay"
 	"github.com/spf13/cobra"
@@ -93,7 +93,7 @@ SYSLOG_RELAY_LABELS.`,
 			sending.Go(func() { sender.Run(sendCtx) })
 			listening.Go(func() { l.Serve(ctx, r.Handle, r.Failed) })
 
-			err = pmetrics.Serve(ctx, f.MetricsListen, page.Handler())
+			err = metrics.Serve(ctx, f.MetricsListen, page.Handler())
 			// serving can end by itself, on a port already taken say, and the rest has to end with it
 			stop()
 			listening.Wait()

@@ -16,7 +16,8 @@ import (
 	"time"
 	_ "time/tzdata" // the tests read times in America/Vancouver, wherever they run
 
-	"github.com/katbyte/go-kt/pmetrics"
+	"github.com/katbyte/go-kt/prometheus/metrics"
+	"github.com/katbyte/go-kt/prometheus/metricstest"
 	"github.com/katbyte/syslog-relay/lib/relay"
 	"github.com/katbyte/syslog-relay/lib/vlogs"
 	"github.com/spf13/cobra"
@@ -242,26 +243,6 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
-// scrape reads one path of the relay's own page, "" until it answers.
-func scrape(t *testing.T, url string) string {
-	t.Helper()
-
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	b, _ := io.ReadAll(resp.Body)
-
-	return string(b)
-}
-
 // TestServe runs the relay as a deployment runs it: lines sent over UDP and TCP reach a VictoriaLogs as rows with their message, its own readings
 // count them, the raw copy keeps them, and a signal stops it cleanly.
 func TestServe(t *testing.T) {
@@ -271,7 +252,7 @@ func TestServe(t *testing.T) {
 	srv := httptest.NewServer(logs)
 	t.Cleanup(srv.Close)
 
-	syslog, metrics := freeAddr(t), freeAddr(t)
+	syslog, served := freeAddr(t), freeAddr(t)
 	raw := filepath.Join(wd, "unifi.raw")
 	t.Setenv("SYSLOG_RELAY_LOGS_URL", srv.URL)
 	t.Setenv("SYSLOG_RELAY_USE_REMOTE_IP", "true")
@@ -279,16 +260,12 @@ func TestServe(t *testing.T) {
 	t.Setenv("SYSLOG_RELAY_RAW_FILE", raw)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	root, _, _ := program(t, "", "serve", "--listen", syslog, "--metrics-listen", metrics, "--labels", "hostname=dock")
+	root, _, _ := program(t, "", "serve", "--listen", syslog, "--metrics-listen", served, "--labels", "hostname=dock")
 	done := make(chan error, 1)
 	go func() { done <- root.ExecuteContext(ctx) }()
 
-	deadline := time.Now().Add(15 * time.Second)
-	for scrape(t, "http://"+metrics+pmetrics.HealthPath) != "ok\n" {
-		if time.Now().After(deadline) {
-			t.Fatal("the relay never answered its health check")
-		}
-		time.Sleep(20 * time.Millisecond)
+	if got := metricstest.Get(t, "http://"+served+metrics.HealthPath); got != "ok\n" {
+		t.Fatalf("the health check said %q, want ok", got)
 	}
 
 	var d net.Dialer
@@ -329,14 +306,18 @@ func TestServe(t *testing.T) {
 		t.Errorf("rows sent to %s, want %s with VictoriaLogs' own stream fields", sentTo, vlogs.Path)
 	}
 
-	page := scrape(t, "http://"+metrics+pmetrics.Path)
-	for _, want := range []string{
-		`syslog_relay_lines_received_total{hostname="dock",protocol="tcp"} 1`,
-		`syslog_relay_lines_received_total{hostname="dock",protocol="udp"} 1`,
-		`syslog_relay_rows_sent_total{hostname="dock"} 2`,
+	page := metricstest.Get(t, "http://"+served+metrics.Path)
+	for _, want := range []struct {
+		name   string
+		labels map[string]string
+		value  float64
+	}{
+		{"syslog_relay_lines_received_total", map[string]string{"hostname": "dock", "protocol": "tcp"}, 1},
+		{"syslog_relay_lines_received_total", map[string]string{"hostname": "dock", "protocol": "udp"}, 1},
+		{"syslog_relay_rows_sent_total", map[string]string{"hostname": "dock"}, 2},
 	} {
-		if !strings.Contains(page, want) {
-			t.Errorf("the page has no %s:\n%s", want, page)
+		if got, ok := metricstest.One(t, page, want.name, want.labels); !ok || got != want.value {
+			t.Errorf("%s%v = %v (on the page: %t), want %v:\n%s", want.name, want.labels, got, ok, want.value, page)
 		}
 	}
 

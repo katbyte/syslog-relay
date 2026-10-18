@@ -24,7 +24,7 @@ Dependencies are vendored. The dev tools are pinned in `.tools/go.mod` and the m
 | `cli` | the commands and settings |
 | `acceptance` | the live tests of the image |
 
-The readings page, `/metrics`, `/healthz` and the labels are [go-kt](https://github.com/katbyte/go-kt)'s `pmetrics`, shared with the other tools that serve one. Rows go to VictoriaLogs through go-kt's `chttp`, so `SYSLOG_RELAY_LOG=TRACE` shows each request and answer.
+The readings page, `/metrics`, `/healthz` and the labels are [go-kt](https://github.com/katbyte/go-kt)'s `prometheus/metrics`, shared with the other tools that serve one, and its tests use go-kt's `prometheus/metricstest`. Rows go to VictoriaLogs through go-kt's `httpc`, so `SYSLOG_RELAY_LOG=TRACE` shows each request and answer.
 
 ## The pinned VictoriaLogs
 
@@ -42,6 +42,7 @@ The parser is VictoriaLogs' own, from `github.com/VictoriaMetrics/VictoriaLogs/l
 
 - The lines are made up, shaped like real events from UniFi Protect, Network and OS. They are in [`unifi.log`](../lib/convert/testdata/unifi.log), with made-up names and addresses.
 - The rows they become are kept in [`unifi.jsonl`](../lib/convert/testdata/unifi.jsonl), so a change to any field shows up as a difference. `go test ./lib/convert -update` rewrites it once the change is meant.
+- The readings page is kept the same way, in [`lib/readings/testdata`](../lib/readings/testdata), for a busy relay and for one sent nothing yet: a renamed reading or a changed label shows up before a dashboard or an alert finds it. `go test ./lib/readings -update` rewrites them.
 - A made-up VictoriaLogs takes the rows in the tests of `serve` and of the sender. It can be made to answer with a fault, or not at all.
 
 ## The live tests

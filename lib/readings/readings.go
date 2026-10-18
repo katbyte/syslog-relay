@@ -5,12 +5,31 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/katbyte/go-kt/prometheus/metrics"
+	"github.com/katbyte/syslog-relay/lib/listen"
 	"github.com/katbyte/syslog-relay/lib/relay"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Namespace starts the name of every reading.
-const Namespace = "syslog_relay"
+// namespace starts the name of every reading.
+const namespace = "syslog_relay"
+
+// list is every reading the page can hold.
+var (
+	list = metrics.NewList(namespace)
+
+	received     = list.Reading("lines_received_total", "Syslog lines received.", "protocol")
+	readFailures = list.Reading("read_failures_total", "Times what a sender sent could not be read as syslog: a line too long, or cut off.", "protocol")
+	rejected     = list.Reading("lines_rejected_total", "Lines dropped because the time written in them could not be read, as VictoriaLogs drops them.")
+	sent         = list.Reading("rows_sent_total", "Rows VictoriaLogs took.")
+	failures     = list.Reading("send_failures_total", "Times VictoriaLogs could not be reached, or answered with a fault.")
+	dropped      = list.Reading("rows_dropped_total", "Rows given up on: the oldest beyond what is held while VictoriaLogs cannot be reached, and any it refused.")
+	queued       = list.Reading("rows_queued", "Rows waiting to be sent.")
+)
+
+// protocols are the ways syslog is taken. Each is on the page from the start, at 0 until a line comes over it, so a rate over it reads 0 rather
+// than nothing.
+var protocols = []string{listen.UDP, listen.TCP}
 
 // Source is what the readings are read from: a *relay.Relay.
 type Source interface {
@@ -19,47 +38,37 @@ type Source interface {
 
 type collector struct {
 	source Source
-
-	received, readFailures, rejected, sent, failures, dropped, queued *prometheus.Desc
 }
 
 // New is the collector of the source's readings.
 func New(source Source) prometheus.Collector {
-	desc := func(name, help string, labels ...string) *prometheus.Desc {
-		return prometheus.NewDesc(prometheus.BuildFQName(Namespace, "", name), help, labels, nil)
-	}
-
-	return &collector{
-		source:       source,
-		received:     desc("lines_received_total", "Syslog lines received.", "protocol"),
-		readFailures: desc("read_failures_total", "Times what a sender sent could not be read as syslog: a line too long, or cut off.", "protocol"),
-		rejected:     desc("lines_rejected_total", "Lines dropped because the time written in them could not be read, as VictoriaLogs drops them."),
-		sent:         desc("rows_sent_total", "Rows VictoriaLogs took."),
-		failures:     desc("send_failures_total", "Times VictoriaLogs could not be reached, or answered with a fault."),
-		dropped:      desc("rows_dropped_total", "Rows given up on: the oldest beyond what is held while VictoriaLogs cannot be reached, and any it refused."),
-		queued:       desc("rows_queued", "Rows waiting to be sent."),
-	}
+	return collector{source: source}
 }
 
-func (c *collector) Describe(ch chan<- *prometheus.Desc) {
-	for _, d := range []*prometheus.Desc{c.received, c.readFailures, c.rejected, c.sent, c.failures, c.dropped, c.queued} {
-		ch <- d
-	}
-}
+func (collector) Describe(ch chan<- *prometheus.Desc) { list.Describe(ch) }
 
-func (c *collector) Collect(ch chan<- prometheus.Metric) {
+func (c collector) Collect(ch chan<- prometheus.Metric) {
 	s := c.source.Stats()
+	w := metrics.NewWriter(ch)
 
-	for _, protocol := range slices.Sorted(maps.Keys(s.Received)) {
-		ch <- prometheus.MustNewConstMetric(c.received, prometheus.CounterValue, float64(s.Received[protocol]), protocol)
-	}
-	for _, protocol := range slices.Sorted(maps.Keys(s.ReadFailures)) {
-		ch <- prometheus.MustNewConstMetric(c.readFailures, prometheus.CounterValue, float64(s.ReadFailures[protocol]), protocol)
+	byProtocol(w, received, s.Received)
+	byProtocol(w, readFailures, s.ReadFailures)
+
+	w.Total(rejected, s.Rejected)
+	w.Total(sent, s.Send.Sent)
+	w.Total(failures, s.Send.Failures)
+	w.Total(dropped, s.Send.Dropped)
+	w.Gauge(queued, s.Send.Queued)
+}
+
+// byProtocol writes a count for each protocol: both of the relay's, and any other it turns out to count.
+func byProtocol(w *metrics.Writer, d *prometheus.Desc, counts map[string]uint64) {
+	for _, protocol := range protocols {
+		w.Total(d, counts[protocol], protocol)
 	}
 
-	ch <- prometheus.MustNewConstMetric(c.rejected, prometheus.CounterValue, float64(s.Rejected))
-	ch <- prometheus.MustNewConstMetric(c.sent, prometheus.CounterValue, float64(s.Send.Sent))
-	ch <- prometheus.MustNewConstMetric(c.failures, prometheus.CounterValue, float64(s.Send.Failures))
-	ch <- prometheus.MustNewConstMetric(c.dropped, prometheus.CounterValue, float64(s.Send.Dropped))
-	ch <- prometheus.MustNewConstMetric(c.queued, prometheus.GaugeValue, float64(s.Send.Queued))
+	// the writer leaves off the ones already written
+	for _, protocol := range slices.Sorted(maps.Keys(counts)) {
+		w.Total(d, counts[protocol], protocol)
+	}
 }

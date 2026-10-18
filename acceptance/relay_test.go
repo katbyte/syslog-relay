@@ -16,12 +16,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/katbyte/go-kt/pmetrics"
+	"github.com/katbyte/go-kt/prometheus/metrics"
+	"github.com/katbyte/go-kt/prometheus/metricstest"
 )
 
 var (
@@ -130,7 +130,7 @@ func startRelay(t *testing.T, nw, name, logs string, env ...string) {
 	}
 	run(t, nw, name, append(args, image)...)
 
-	waitFor(t, "the relay's health check", func() bool { return get(t, "http://"+published(t, name, "9124/tcp")+pmetrics.HealthPath) == "ok" })
+	waitFor(t, "the relay's health check", func() bool { return get(t, "http://"+published(t, name, "9124/tcp")+metrics.HealthPath) == "ok" })
 }
 
 // client is the one client every request is made with.
@@ -252,17 +252,6 @@ func send(t *testing.T, protocol, to string, lines ...string) {
 	}
 }
 
-// reading is the value of the one reading on the page that starts as given, "" when there is none.
-func reading(page, start string) string {
-	for line := range strings.Lines(page) {
-		if rest, found := strings.CutPrefix(line, start); found {
-			return strings.TrimSpace(rest)
-		}
-	}
-
-	return ""
-}
-
 // The check that matters: a UniFi line sent through the relay is stored with exactly the fields and values VictoriaLogs stores for it by itself,
 // stream and all, but for its message, which is the event's own msg where VictoriaLogs alone has none.
 func TestSameRowsButTheMessage(t *testing.T) {
@@ -332,13 +321,13 @@ func TestSameRowsButTheMessage(t *testing.T) {
 		t.Error("no line had a msg to fill the message from")
 	}
 
-	page := get(t, "http://"+published(t, nw+"-relay", "9124/tcp")+pmetrics.Path)
-	want := strconv.Itoa(len(lines))
-	if got := reading(page, `syslog_relay_lines_received_total{protocol="udp"}`); got != want {
-		t.Errorf("lines received over UDP = %q, want %s", got, want)
+	page := metricstest.Get(t, "http://"+published(t, nw+"-relay", "9124/tcp")+metrics.Path)
+	want := float64(len(lines))
+	if got, _ := metricstest.One(t, page, "syslog_relay_lines_received_total", map[string]string{"protocol": "udp"}); got != want {
+		t.Errorf("lines received over UDP = %v, want %v", got, want)
 	}
-	if got := reading(page, "syslog_relay_rows_sent_total"); got != want {
-		t.Errorf("rows sent = %q, want %s", got, want)
+	if got, _ := metricstest.One(t, page, "syslog_relay_rows_sent_total", nil); got != want {
+		t.Errorf("rows sent = %v, want %v", got, want)
 	}
 
 	// the raw copy holds the lines as they were sent, in the order they arrived, and only its owner can read it
@@ -377,26 +366,31 @@ func TestHeldWhileVictoriaLogsIsAway(t *testing.T) {
 	nw := network(t)
 	startLogs(t, nw, nw+"-fed")
 	startRelay(t, nw, nw+"-relay", "fed")
-	metrics := "http://" + published(t, nw+"-relay", "9124/tcp") + pmetrics.Path
+	pageURL := "http://" + published(t, nw+"-relay", "9124/tcp") + metrics.Path
 
 	mustDocker(t, "stop", nw+"-fed")
 
 	lines := unifi(t)
 	sendUDP(t, nw, "relay", "1514", lines...)
-	waitFor(t, "the rows to be held", func() bool {
-		page := get(t, metrics)
-		return reading(page, "syslog_relay_rows_queued") == strconv.Itoa(len(lines)) && reading(page, "syslog_relay_send_failures_total") != "0"
-	})
+	held := func(page string) bool {
+		queued, _ := metricstest.One(t, page, "syslog_relay_rows_queued", nil)
+		failures, _ := metricstest.One(t, page, "syslog_relay_send_failures_total", nil)
+
+		return queued == float64(len(lines)) && failures > 0
+	}
+	if page, ok := metricstest.Until(t, pageURL, patience, held); !ok {
+		t.Fatalf("the rows were never held while VictoriaLogs was away:\n%s", page)
+	}
 
 	mustDocker(t, "start", nw+"-fed")
 	// started again, it is published on another port
 	waitRows(t, "http://"+published(t, nw+"-fed", "9428/tcp"), len(lines))
 
-	page := get(t, metrics)
-	if got := reading(page, "syslog_relay_rows_queued"); got != "0" {
-		t.Errorf("rows queued = %s once VictoriaLogs is back, want 0", got)
+	page := metricstest.Get(t, pageURL)
+	if got, _ := metricstest.One(t, page, "syslog_relay_rows_queued", nil); got != 0 {
+		t.Errorf("rows queued = %v once VictoriaLogs is back, want 0", got)
 	}
-	if got := reading(page, "syslog_relay_rows_dropped_total"); got != "0" {
-		t.Errorf("rows dropped = %s, want none", got)
+	if got, _ := metricstest.One(t, page, "syslog_relay_rows_dropped_total", nil); got != 0 {
+		t.Errorf("rows dropped = %v, want none", got)
 	}
 }

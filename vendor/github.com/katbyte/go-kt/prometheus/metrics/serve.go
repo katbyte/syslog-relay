@@ -1,28 +1,22 @@
-package pmetrics
+package metrics
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/katbyte/go-kt/clog"
+	"github.com/katbyte/go-kt/httpd"
 	"github.com/katbyte/go-kt/version"
 )
 
 const (
 	// Path is where the page is served.
 	Path = "/metrics"
-	// HealthPath answers "ok" while the tool is serving, whatever state the thing it reports on is in: a container is not unhealthy because what it
-	// watches is down.
-	HealthPath = "/healthz"
-
-	readHeaderTimeout = 10 * time.Second
-	shutdownTimeout   = 10 * time.Second
+	// HealthPath answers "ok" while the tool is serving, whatever state the thing it reports on is in.
+	HealthPath = httpd.HealthPath
 )
 
 // scrapeErrors sends what goes wrong writing the page to the log, as errors.
@@ -36,10 +30,7 @@ func (p *Page) Handler() http.Handler {
 	mux := http.NewServeMux()
 	// a reading that cannot be written is left out and logged; the rest of the page is still served
 	mux.Handle("GET "+Path, promhttp.HandlerFor(p.registry, promhttp.HandlerOpts{ErrorLog: scrapeErrors{}, ErrorHandling: promhttp.ContinueOnError}))
-	mux.HandleFunc("GET "+HealthPath, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
-	})
+	httpd.Health(mux)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintf(w, "%s %s\n%s\n%s\n", p.name, version.Version, Path, HealthPath)
@@ -50,35 +41,12 @@ func (p *Page) Handler() http.Handler {
 
 // Serve serves h on listen until the context ends, then lets requests under way finish. Whoever calls it ends the context on a signal.
 func Serve(ctx context.Context, listen string, h http.Handler) error {
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
+	ln, err := httpd.Listen(ctx, listen)
 	if err != nil {
-		return fmt.Errorf("listening on %s: %w", listen, err)
+		return err
 	}
 
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: readHeaderTimeout}
 	clog.Log.Infof("serving the metrics page on %s%s", ln.Addr(), Path)
 
-	failed := make(chan error, 1)
-	go func() { failed <- srv.Serve(ln) }()
-
-	select {
-	case err := <-failed:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-
-		return fmt.Errorf("serving on %s: %w", ln.Addr(), err)
-	case <-ctx.Done():
-	}
-
-	clog.Log.Info("shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
-	defer cancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutting down: %w", err)
-	}
-
-	return nil
+	return httpd.Serve(ctx, ln, h)
 }

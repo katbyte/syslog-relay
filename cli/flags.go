@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/katbyte/go-kt/clog"
-	"github.com/katbyte/go-kt/pmetrics"
+	"github.com/katbyte/go-kt/prometheus/metrics"
 	"github.com/katbyte/syslog-relay/lib/convert"
 	"github.com/katbyte/syslog-relay/lib/rawcopy"
 	"github.com/katbyte/syslog-relay/lib/readings"
@@ -249,13 +249,13 @@ func (f *FlagData) raw() (*rawcopy.File, error) {
 }
 
 // page is the page of the relay's readings, with the labels the settings ask for on every one.
-func (f *FlagData) page(r *relay.Relay) (*pmetrics.Page, error) {
-	labels, err := pmetrics.ParseLabels(f.Labels)
+func (f *FlagData) page(r *relay.Relay) (*metrics.Page, error) {
+	labels, err := metrics.ParseLabels(f.Labels)
 	if err != nil {
 		return nil, fmt.Errorf("--labels (%s): %w", envNames["labels"], err)
 	}
 
-	p, err := pmetrics.New(pmetrics.Options{Name: toolName, Namespace: readings.Namespace, Labels: labels}, readings.New(r))
+	p, err := metrics.New(metrics.Options{Name: toolName, Labels: labels}, readings.New(r))
 	if err != nil {
 		return nil, fmt.Errorf("--labels (%s): %w", envNames["labels"], err)
 	}

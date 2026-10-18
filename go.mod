@@ -6,7 +6,7 @@ require (
 	github.com/VictoriaMetrics/VictoriaLogs v1.52.2-0.20261001104708-915d91904bf7
 	github.com/VictoriaMetrics/VictoriaMetrics v1.152.1-0.20260924162003-018bc7808882
 	github.com/gookit/color v1.6.1
-	github.com/katbyte/go-kt v0.7.0
+	github.com/katbyte/go-kt v0.9.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
