@@ -2,8 +2,8 @@
 ## explicit; go 1.27.1
 github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage
 github.com/VictoriaMetrics/VictoriaLogs/lib/prefixfilter
-# github.com/VictoriaMetrics/VictoriaMetrics v1.152.1-0.20260924162003-018bc7808882
-## explicit; go 1.27.1
+# github.com/VictoriaMetrics/VictoriaMetrics v1.154.0
+## explicit; go 1.27.2
 github.com/VictoriaMetrics/VictoriaMetrics/lib/atomicutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/blockcache
 github.com/VictoriaMetrics/VictoriaMetrics/lib/buildinfo
@@ -31,10 +31,10 @@ github.com/VictoriaMetrics/VictoriaMetrics/lib/stringsutil
 github.com/VictoriaMetrics/VictoriaMetrics/lib/syncwg
 github.com/VictoriaMetrics/VictoriaMetrics/lib/timerpool
 github.com/VictoriaMetrics/VictoriaMetrics/lib/timeutil
-# github.com/VictoriaMetrics/metrics v1.44.0
+# github.com/VictoriaMetrics/metrics v1.44.1
 ## explicit; go 1.24.0
 github.com/VictoriaMetrics/metrics
-# github.com/VictoriaMetrics/metricsql v0.87.4
+# github.com/VictoriaMetrics/metricsql v0.87.5
 ## explicit; go 1.24.2
 github.com/VictoriaMetrics/metricsql
 github.com/VictoriaMetrics/metricsql/binaryop
@@ -52,7 +52,7 @@ github.com/fsnotify/fsnotify/internal
 ## explicit; go 1.18
 github.com/go-viper/mapstructure/v2
 github.com/go-viper/mapstructure/v2/internal/errors
-# github.com/gookit/color v1.6.1
+# github.com/gookit/color v1.6.2
 ## explicit; go 1.18
 github.com/gookit/color
 # github.com/inconshreveable/mousetrap v1.1.0
