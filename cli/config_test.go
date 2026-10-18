@@ -262,6 +262,9 @@ func TestSettingsThatCannotBeUsed(t *testing.T) {
 		{"no message field", func(f *FlagData) { f.MsgField = " , " }, convertErr, "SYSLOG_RELAY_MSG_FIELD"},
 		{"a message field list cut off", func(f *FlagData) { f.MsgField = `["message"` }, convertErr, "SYSLOG_RELAY_MSG_FIELD"},
 		{"a zone there is none of", func(f *FlagData) { f.Timezone = "Mars/Olympus" }, convertErr, "SYSLOG_RELAY_TIMEZONE"},
+		{"an extra field without a value", func(f *FlagData) { f.ExtraFields = "site" }, convertErr, "SYSLOG_RELAY_EXTRA_FIELDS"},
+		{"a field copied from nothing", func(f *FlagData) { f.CopyFields = "site=" }, convertErr, "SYSLOG_RELAY_COPY_FIELDS"},
+		{"a site at no network", func(f *FlagData) { f.SiteNetworks = "home=nowhere" }, convertErr, "SYSLOG_RELAY_SITE_NETWORKS"},
 		{"no VictoriaLogs", func(f *FlagData) { f.LogsURL = "" }, senderErr, "SYSLOG_RELAY_LOGS_URL"},
 		{"VictoriaLogs without a scheme", func(f *FlagData) { f.LogsURL = "10.0.0.2:9428" }, senderErr, "SYSLOG_RELAY_LOGS_URL"},
 		{"a queue that holds nothing", func(f *FlagData) { f.QueueSize = 0 }, senderErr, "SYSLOG_RELAY_QUEUE_SIZE"},
@@ -303,6 +306,27 @@ func pageErr(f *FlagData) error {
 	_, err = f.page(newRelay(s))
 
 	return err
+}
+
+// The extra and copied fields and the sites given reach the rows, and so does leave to record the sender.
+func TestExtraAndCopiedFields(t *testing.T) {
+	t.Parallel()
+
+	f := FlagData{MsgField: "message", Timezone: "UTC", UseRemoteIP: true, ExtraFields: `{"rack":"a"}`, CopyFields: "source=app_name", SiteNetworks: "home=192.0.2.0/24"}
+	o, err := f.convert()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := o.Row(nil, `Oct 13 18:58:31 nvr app: hi`, time.Now(), "192.0.2.11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"rack":"a"`, `"source":"app"`, `"site":"home"`, `"remote_ip":"192.0.2.11"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("row = %s, want %s in it", b, want)
+		}
+	}
 }
 
 // The zone given is the one times are read in.

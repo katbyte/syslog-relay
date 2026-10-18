@@ -26,10 +26,9 @@ type Raw interface {
 
 // Relay handles the lines a listener receives.
 type Relay struct {
-	convert     convert.Options
-	useRemoteIP bool
-	raw         Raw
-	queue       Queue
+	convert convert.Options
+	raw     Raw
+	queue   Queue
 
 	// now is the time a line arrived, the clock unless a test says otherwise
 	now func() time.Time
@@ -40,15 +39,13 @@ type Relay struct {
 // Options says how lines are read and recorded.
 type Options struct {
 	Convert convert.Options
-	// UseRemoteIP records the sender's address in remote_ip, and as the hostname of a line that has none, as VictoriaLogs' -syslog.useRemoteIP.
-	UseRemoteIP bool
 	// Raw is where lines are kept as they arrived, nil for nowhere.
 	Raw Raw
 }
 
 // New is a relay that queues its rows on q.
 func New(o Options, q Queue) *Relay {
-	return &Relay{convert: o.Convert, useRemoteIP: o.UseRemoteIP, raw: o.Raw, queue: q, now: time.Now}
+	return &Relay{convert: o.Convert, raw: o.Raw, queue: q, now: time.Now}
 }
 
 // Handle is a listen.Handler: it takes one line.
@@ -66,12 +63,7 @@ func (r *Relay) Handle(protocol string, line []byte, from net.Addr) {
 		r.raw.Write(line)
 	}
 
-	var remoteIP string
-	if r.useRemoteIP {
-		remoteIP = listen.RemoteIP(from)
-	}
-
-	row, err := r.convert.Row(nil, string(line), arrived, remoteIP)
+	row, err := r.convert.Row(nil, string(line), arrived, listen.RemoteIP(from))
 	if err != nil {
 		r.rejected.Add(1)
 		clog.Log.Warnf("dropping a line from %s, as VictoriaLogs would: %v", from, err)

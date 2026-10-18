@@ -58,7 +58,7 @@ SYSLOG_RELAY_LABELS.`,
 				return err
 			}
 
-			opts := relay.Options{Convert: conv, UseRemoteIP: f.UseRemoteIP}
+			opts := relay.Options{Convert: conv}
 			raw, err := f.raw()
 			if err != nil {
 				return err

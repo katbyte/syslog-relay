@@ -46,7 +46,8 @@ Complete documentation is available at https://github.com/katbyte/syslog-relay`,
 		Long: `Reads syslog lines from the files named, or else from what is piped in, and prints the
 JSON line VictoriaLogs would be sent for each, with the settings given, without sending
 anything: a look at what a line becomes. Lines are split as they are over TCP. No sender's
-address is known, so --use-remote-ip has nothing to record.`,
+address is known, so --use-remote-ip has nothing to record and --site-networks no site to
+name.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true

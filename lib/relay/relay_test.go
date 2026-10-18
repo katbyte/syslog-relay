@@ -10,6 +10,7 @@ import (
 
 	"github.com/katbyte/syslog-relay/lib/convert"
 	"github.com/katbyte/syslog-relay/lib/listen"
+	"github.com/katbyte/syslog-relay/lib/sites"
 	"github.com/katbyte/syslog-relay/lib/vlogs"
 )
 
@@ -72,7 +73,7 @@ func TestHandle(t *testing.T) {
 	t.Parallel()
 
 	keep := &raw{}
-	r, q := relayed(Options{Convert: convert.Options{MsgFields: convert.DefaultMsgFields, UseLocalTimestamp: true, Timezone: time.UTC}, UseRemoteIP: true, Raw: keep})
+	r, q := relayed(Options{Convert: convert.Options{MsgFields: convert.DefaultMsgFields, UseLocalTimestamp: true, UseRemoteIP: true, Timezone: time.UTC}, Raw: keep})
 
 	line := []byte(cef)
 	r.Handle(listen.UDP, line, sender)
@@ -97,15 +98,20 @@ func TestHandle(t *testing.T) {
 	}
 }
 
-// Without leave to, the sender's address is not recorded, and no raw copy is no fault.
+// Without leave to, the sender's address is not recorded, though the site it is at still is, and no raw copy is no fault.
 func TestHandleWithoutRemoteIP(t *testing.T) {
 	t.Parallel()
 
-	r, q := relayed(Options{Convert: convert.Options{MsgFields: convert.DefaultMsgFields, Timezone: time.UTC}})
+	at, err := sites.Parse("home=192.0.2.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, q := relayed(Options{Convert: convert.Options{MsgFields: convert.DefaultMsgFields, Timezone: time.UTC, Sites: at}})
 	r.Handle(listen.UDP, []byte(cef), sender)
 
-	if f := fields(t, q.rows[0]); f["remote_ip"] != "" {
-		t.Errorf("remote_ip = %q, want it left out", f["remote_ip"])
+	if f := fields(t, q.rows[0]); f["remote_ip"] != "" || f["site"] != "home" {
+		t.Errorf("remote_ip = %q and site = %q, want the address left out and the site home", f["remote_ip"], f["site"])
 	}
 }
 

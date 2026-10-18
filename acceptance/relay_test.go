@@ -119,12 +119,14 @@ func startLogs(t *testing.T, nw, name string, flags ...string) string {
 	return base
 }
 
-// startRelay starts the relay's image sending to the VictoriaLogs called logs on the network, with the real settings and these besides.
-func startRelay(t *testing.T, nw, name, logs string, env ...string) {
+// startRelay starts the relay's image on the network as relay, sending to the VictoriaLogs there called fed, with the real settings and these
+// besides.
+func startRelay(t *testing.T, nw string, env ...string) {
 	t.Helper()
 
+	name := nw + "-relay"
 	args := make([]string, 0, 2*(len(realSettings)+len(env))+9)
-	args = append(args, "--publish", "127.0.0.1::1514/tcp", "--publish", "127.0.0.1::9124", "--health-interval", "2s", "--env", "SYSLOG_RELAY_LOGS_URL=http://"+logs+":9428")
+	args = append(args, "--publish", "127.0.0.1::1514/tcp", "--publish", "127.0.0.1::9124", "--health-interval", "2s", "--env", "SYSLOG_RELAY_LOGS_URL=http://fed:9428")
 	for _, e := range append(slices.Clone(realSettings), env...) {
 		args = append(args, "--env", e)
 	}
@@ -256,9 +258,11 @@ func send(t *testing.T, protocol, to string, lines ...string) {
 // stream and all, but for its message, which is the event's own msg where VictoriaLogs alone has none.
 func TestSameRowsButTheMessage(t *testing.T) {
 	nw := network(t)
-	stock := startLogs(t, nw, nw+"-stock", "-syslog.listenAddr.udp=:514", "-syslog.useLocalTimestamp.udp=true", "-syslog.useRemoteIP.udp=true")
+	// both are given the same extra fields, one of them in place of a field every line has
+	extra := `{"site":"home","format":"unifi"}`
+	stock := startLogs(t, nw, nw+"-stock", "-syslog.listenAddr.udp=:514", "-syslog.useLocalTimestamp.udp=true", "-syslog.useRemoteIP.udp=true", "-syslog.extraFields.udp="+extra)
 	fed := startLogs(t, nw, nw+"-fed")
-	startRelay(t, nw, nw+"-relay", "fed", "SYSLOG_RELAY_RAW_FILE=/tmp/unifi.raw")
+	startRelay(t, nw, "SYSLOG_RELAY_RAW_FILE=/tmp/unifi.raw", "SYSLOG_RELAY_EXTRA_FIELDS="+extra)
 
 	lines := unifi(t)
 	sendUDP(t, nw, "stock", "514", lines...)
@@ -298,6 +302,10 @@ func TestSameRowsButTheMessage(t *testing.T) {
 			delete(s, "cef.extension.msg")
 			delete(s, "_msg")
 			delete(f, "_msg")
+		}
+
+		if s["site"] != "home" || s["format"] != "unifi" {
+			t.Errorf("%s: VictoriaLogs alone stored site = %q and format = %q, want its extra fields home and unifi", ts, s["site"], s["format"])
 		}
 
 		// each row is stored at the time it arrived, a moment apart
@@ -344,7 +352,7 @@ func TestSameRowsButTheMessage(t *testing.T) {
 func TestImage(t *testing.T) {
 	nw := network(t)
 	fed := startLogs(t, nw, nw+"-fed")
-	startRelay(t, nw, nw+"-relay", "fed")
+	startRelay(t, nw)
 
 	if uid := mustDocker(t, "exec", nw+"-relay", "id", "-u"); uid != "65532" {
 		t.Errorf("the relay runs as uid %s, want 65532 rather than root", uid)
@@ -361,11 +369,38 @@ func TestImage(t *testing.T) {
 	}
 }
 
+// A site copied from the line wins, and a line without one is named by the network its sender is in, as the relay sees it from inside a container.
+func TestSites(t *testing.T) {
+	nw := network(t)
+	fed := startLogs(t, nw, nw+"-fed")
+	subnet := strings.TrimSpace(mustDocker(t, "network", "inspect", "--format", "{{(index .IPAM.Config 0).Subnet}}", nw))
+	startRelay(t, nw, "SYSLOG_RELAY_COPY_FIELDS=site=cef.extension.UNIFIsite", "SYSLOG_RELAY_SITE_NETWORKS=elsewhere=192.0.2.0/24,lab="+subnet, "SYSLOG_RELAY_EXTRA_FIELDS=site=nowhere")
+
+	lines := unifi(t)
+	sendUDP(t, nw, "relay", "1514", lines...)
+
+	copied := 0
+	for _, r := range waitRows(t, fed, len(lines)) {
+		want := r["cef.extension.UNIFIsite"]
+		if want == "" {
+			want = "lab"
+		} else {
+			copied++
+		}
+		if r["site"] != want {
+			t.Errorf("site = %q in %v, want %q", r["site"], r, want)
+		}
+	}
+	if copied == 0 || copied == len(lines) {
+		t.Errorf("%d of %d lines had a UNIFIsite to copy, want some but not all", copied, len(lines))
+	}
+}
+
 // While VictoriaLogs is away rows are held, and once it is back they reach it.
 func TestHeldWhileVictoriaLogsIsAway(t *testing.T) {
 	nw := network(t)
 	startLogs(t, nw, nw+"-fed")
-	startRelay(t, nw, nw+"-relay", "fed")
+	startRelay(t, nw)
 	pageURL := "http://" + published(t, nw+"-relay", "9124/tcp") + metrics.Path
 
 	mustDocker(t, "stop", nw+"-fed")

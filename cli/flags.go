@@ -15,6 +15,7 @@ import (
 	"github.com/katbyte/syslog-relay/lib/rawcopy"
 	"github.com/katbyte/syslog-relay/lib/readings"
 	"github.com/katbyte/syslog-relay/lib/relay"
+	"github.com/katbyte/syslog-relay/lib/sites"
 	"github.com/katbyte/syslog-relay/lib/vlogs"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -43,6 +44,9 @@ type FlagData struct {
 	UseLocalTimestamp bool   `mapstructure:"use-local-timestamp"`
 	UseRemoteIP       bool   `mapstructure:"use-remote-ip"`
 	StripQuotes       bool   `mapstructure:"strip-quotes"`
+	ExtraFields       string `mapstructure:"extra-fields"`
+	CopyFields        string `mapstructure:"copy-fields"`
+	SiteNetworks      string `mapstructure:"site-networks"`
 	Timezone          string `mapstructure:"timezone"`
 	QueueSize         int    `mapstructure:"queue-size"`
 	RawFile           string `mapstructure:"raw-file"`
@@ -60,6 +64,9 @@ var envNames = map[string]string{
 	"use-local-timestamp": "SYSLOG_RELAY_USE_LOCAL_TIMESTAMP",
 	"use-remote-ip":       "SYSLOG_RELAY_USE_REMOTE_IP",
 	"strip-quotes":        "SYSLOG_RELAY_STRIP_QUOTES",
+	"extra-fields":        "SYSLOG_RELAY_EXTRA_FIELDS",
+	"copy-fields":         "SYSLOG_RELAY_COPY_FIELDS",
+	"site-networks":       "SYSLOG_RELAY_SITE_NETWORKS",
 	"timezone":            "SYSLOG_RELAY_TIMEZONE",
 	"queue-size":          "SYSLOG_RELAY_QUEUE_SIZE",
 	"raw-file":            "SYSLOG_RELAY_RAW_FILE",
@@ -81,6 +88,9 @@ func configureFlags(root *cobra.Command) error {
 	pflags.Bool("use-local-timestamp", false, "store the time each line arrived in place of the time written in it, which is kept as the timestamp field (VictoriaLogs' -syslog.useLocalTimestamp)")
 	pflags.Bool("use-remote-ip", false, "record the sender's address in remote_ip, and as the hostname of a line without one (VictoriaLogs' -syslog.useRemoteIP)")
 	pflags.Bool("strip-quotes", false, "take off a pair of double quotes around the whole message, which UniFi Protect puts around every one")
+	pflags.String("extra-fields", "", "fields to add to every row, written name=value,name=value or as a JSON object, e.g. site=home; each replaces any field of that name in the line (VictoriaLogs' -syslog.extraFields)")
+	pflags.String("copy-fields", "", "fields to give the value of others in the line, written to=from,to=from, e.g. site=cef.extension.UNIFIsite; each replaces any field of that name in the line or in --extra-fields, which stands for a line without the value")
+	pflags.String("site-networks", "", "the site each line comes from, by the network its sender is in, written site=network,site=network, e.g. home=10.0.0.0/16,cabin=203.0.113.7; stored in the site field, the most specific network winning, under a site from --copy-fields and over one from --extra-fields")
 	pflags.String("timezone", defaultTimezone, "the zone a time written without one is read in, e.g. America/Vancouver; Local is the machine's, which TZ sets (VictoriaLogs' -syslog.timezone)")
 	pflags.Int("queue-size", defaultQueueSize, "the most rows held in memory while VictoriaLogs cannot be reached; past it the oldest are dropped")
 	pflags.String("raw-file", "", "also keep every line received, unchanged, in this file: to send them again later. They name people and devices")
@@ -209,7 +219,22 @@ func (f *FlagData) convert() (convert.Options, error) {
 		return convert.Options{}, fmt.Errorf("--timezone (%s): %w", envNames["timezone"], err)
 	}
 
-	return convert.Options{MsgFields: msgFields, UseLocalTimestamp: f.UseLocalTimestamp, Timezone: tz, StripQuotes: f.StripQuotes}, nil
+	extra, err := convert.ParseExtraFields(f.ExtraFields)
+	if err != nil {
+		return convert.Options{}, fmt.Errorf("--extra-fields (%s): %w", envNames["extra-fields"], err)
+	}
+
+	copies, err := convert.ParseCopyFields(f.CopyFields)
+	if err != nil {
+		return convert.Options{}, fmt.Errorf("--copy-fields (%s): %w", envNames["copy-fields"], err)
+	}
+
+	at, err := sites.Parse(f.SiteNetworks)
+	if err != nil {
+		return convert.Options{}, fmt.Errorf("--site-networks (%s): %w", envNames["site-networks"], err)
+	}
+
+	return convert.Options{MsgFields: msgFields, UseLocalTimestamp: f.UseLocalTimestamp, UseRemoteIP: f.UseRemoteIP, Timezone: tz, ExtraFields: extra, StripQuotes: f.StripQuotes, CopyFields: copies, Sites: at}, nil
 }
 
 // sender is what sends rows to VictoriaLogs, not yet started.

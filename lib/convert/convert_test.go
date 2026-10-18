@@ -12,7 +12,9 @@ import (
 	"time"
 	_ "time/tzdata" // the tests read times in America/Vancouver, wherever they run
 
+	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
 	"github.com/katbyte/go-kt/pointer"
+	"github.com/katbyte/syslog-relay/lib/sites"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/unifi.jsonl from what the lines become now")
@@ -32,11 +34,11 @@ func vancouver(t *testing.T) *time.Location {
 // arrived is when every line in these tests arrives: a moment after the last of them was written.
 var arrived = time.Date(2026, 10, 14, 3, 30, 0, 500, time.UTC)
 
-// row is the row a line becomes, read back as its fields.
-func row(t *testing.T, o Options, line, remoteIP string) map[string]string {
+// row is the row a line from that sender becomes, read back as its fields.
+func row(t *testing.T, o Options, line, sender string) map[string]string {
 	t.Helper()
 
-	b, err := o.Row(nil, line, arrived, remoteIP)
+	b, err := o.Row(nil, line, arrived, sender)
 	if err != nil {
 		t.Fatalf("Row(%q): %v", line, err)
 	}
@@ -57,7 +59,7 @@ func row(t *testing.T, o Options, line, remoteIP string) map[string]string {
 func TestUniFi(t *testing.T) {
 	t.Parallel()
 
-	o := Options{MsgFields: DefaultMsgFields, UseLocalTimestamp: true, Timezone: vancouver(t)}
+	o := Options{MsgFields: DefaultMsgFields, UseLocalTimestamp: true, UseRemoteIP: true, Timezone: vancouver(t)}
 
 	in, err := os.ReadFile(filepath.Join("testdata", "unifi.log"))
 	if err != nil {
@@ -184,7 +186,7 @@ func TestTimeNotReadable(t *testing.T) {
 func TestRemoteIP(t *testing.T) {
 	t.Parallel()
 
-	o := Options{MsgFields: DefaultMsgFields, Timezone: time.UTC}
+	o := Options{MsgFields: DefaultMsgFields, UseRemoteIP: true, Timezone: time.UTC}
 
 	fields := row(t, o, `Oct 13 18:58:31 nvr app: hi`, "192.0.2.11")
 	if fields["remote_ip"] != "192.0.2.11" || fields["hostname"] != "nvr" {
@@ -199,10 +201,188 @@ func TestRemoteIP(t *testing.T) {
 
 	fields = row(t, o, `Oct 13 18:58:31 app: hi`, "")
 	if _, ok := fields["remote_ip"]; ok {
+		t.Errorf("remote_ip is recorded when the sender is not known: %v", fields)
+	}
+	if _, ok := fields["hostname"]; ok {
+		t.Errorf("hostname is made up when the line has none and the sender is not known: %v", fields)
+	}
+
+	o.UseRemoteIP = false
+	fields = row(t, o, `Oct 13 18:58:31 app: hi`, "192.0.2.11")
+	if _, ok := fields["remote_ip"]; ok {
 		t.Errorf("remote_ip is recorded when the sender was not to be: %v", fields)
 	}
 	if _, ok := fields["hostname"]; ok {
 		t.Errorf("hostname is made up when the line has none and the sender was not to be recorded: %v", fields)
+	}
+}
+
+// Extra fields are added to every row, and one the line has of the same name is left out, as VictoriaLogs adds -syslog.extraFields.
+func TestExtraFields(t *testing.T) {
+	t.Parallel()
+
+	extra, err := ParseExtraFields("site=home,app_name=unifi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Options{MsgFields: DefaultMsgFields, Timezone: time.UTC, ExtraFields: extra}
+
+	b, err := o.Row(nil, `Oct 13 18:58:31 nvr app: hi`, arrived, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := bytes.Count(b, []byte(`"app_name":`)); n != 1 {
+		t.Errorf("row = %s, with app_name %d times, want once", b, n)
+	}
+
+	fields := row(t, o, `Oct 13 18:58:31 nvr app: hi`, "")
+	if fields["site"] != "home" || fields["app_name"] != "unifi" || fields["_msg"] != "hi" || fields["hostname"] != "nvr" {
+		t.Errorf("row = %v, want the site added, app_name replaced and the rest as the line has it", fields)
+	}
+}
+
+// A copied field holds the first of its sources the line has a value for, in place of the line's own field of its name and of an extra field,
+// which stands for a line without one.
+func TestCopyFields(t *testing.T) {
+	t.Parallel()
+
+	copies, err := ParseCopyFields("site=cef.extension.UNIFIsite,site=cef.extension.UNIFIhost,product=cef.device_product,said=cef.extension.msg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Options{MsgFields: DefaultMsgFields, Timezone: time.UTC, CopyFields: copies, ExtraFields: []logstorage.Field{{Name: "site", Value: "elsewhere"}}}
+
+	const header = `Oct 13 18:58:31 cloudkey CEF:0|Ubiquiti|UniFi Network|10.6.106|203|Blocked by Firewall|4|`
+	for line, want := range map[string]string{
+		header + `UNIFIsite=cabin UNIFIhost=console msg=blocked`: "cabin",
+		header + `UNIFIhost=console msg=blocked`:                 "console",
+		header + `msg=blocked`:                                   "elsewhere",
+		header + `UNIFIsite= msg=blocked`:                        "elsewhere",
+		`Oct 13 18:58:31 nvr site: hi`:                           "elsewhere",
+	} {
+		b, err := o.Row(nil, line, arrived, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := bytes.Count(b, []byte(`"site":`)); n != 1 {
+			t.Errorf("%q: row = %s, with site %d times, want once", line, b, n)
+		}
+
+		fields := row(t, o, line, "")
+		if fields["site"] != want {
+			t.Errorf("%q: site = %q, want %q", line, fields["site"], want)
+		}
+		if fields["cef.extension.UNIFIsite"] == "" && fields["site"] == "cabin" {
+			t.Errorf("%q: the field copied from is gone: %v", line, fields)
+		}
+	}
+
+	// a field copied from one the message is then taken from still gets its value, and so does one with no extra field to stand for it
+	fields := row(t, o, header+`UNIFIsite=cabin msg=blocked`, "")
+	if fields["said"] != "blocked" || fields["_msg"] != "blocked" || fields["product"] != "UniFi Network" {
+		t.Errorf("row = %v, want said and _msg both blocked, and product UniFi Network", fields)
+	}
+	if fields = row(t, o, `Oct 13 18:58:31 nvr app: hi`, ""); fields["product"] != "" {
+		t.Errorf("product = %q from a line without the field, want none", fields["product"])
+	}
+}
+
+// The site is the one at the most specific network the sender is in, under a site copied from the line and over one from the extra fields, which
+// stands for a sender in none.
+func TestSites(t *testing.T) {
+	t.Parallel()
+
+	at, err := sites.Parse("home=192.0.2.0/24,shed=192.0.2.128/25,cabin=198.51.100.0/24,lab=2001:db8::/32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies, err := ParseCopyFields("site=cef.extension.UNIFIsite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Options{MsgFields: DefaultMsgFields, Timezone: time.UTC, Sites: at, CopyFields: copies, ExtraFields: []logstorage.Field{{Name: "site", Value: "elsewhere"}}}
+
+	const plain = `Oct 13 18:58:31 gateway kernel: link up`
+	const event = `Oct 13 18:58:31 cloudkey CEF:0|Ubiquiti|UniFi Network|10.6.106|203|Blocked by Firewall|4|UNIFIsite=cabin msg=blocked`
+	for _, c := range []struct{ line, sender, want string }{
+		{plain, "192.0.2.11", "home"},
+		{plain, "192.0.2.200", "shed"},
+		{plain, "198.51.100.7", "cabin"},
+		{plain, "[2001:db8::1]", "lab"},
+		{plain, "203.0.113.9", "elsewhere"},
+		{plain, "", "elsewhere"},
+		{plain, "not an address", "elsewhere"},
+		// a controller at home sends the cabin's events from its own address
+		{event, "192.0.2.11", "cabin"},
+		{event, "203.0.113.9", "cabin"},
+	} {
+		b, err := o.Row(nil, c.line, arrived, c.sender)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := bytes.Count(b, []byte(`"site":`)); n != 1 {
+			t.Errorf("from %q: row = %s, with site %d times, want once", c.sender, b, n)
+		}
+		if got := row(t, o, c.line, c.sender)["site"]; got != c.want {
+			t.Errorf("%q from %q: site = %q, want %q", c.line, c.sender, got, c.want)
+		}
+	}
+
+	// the extra fields are left as they were for the next row
+	if o.ExtraFields[0].Value != "elsewhere" || len(o.ExtraFields) != 1 {
+		t.Errorf("ExtraFields = %v after rows, want them unchanged", o.ExtraFields)
+	}
+}
+
+func TestParseCopyFields(t *testing.T) {
+	t.Parallel()
+
+	for s, want := range map[string]string{
+		"":                         "null",
+		"site = a , b=c, site=d ,": `[{"To":"site","From":["a","d"]},{"To":"b","From":["c"]}]`,
+	} {
+		got, err := ParseCopyFields(s)
+		if err != nil {
+			t.Errorf("ParseCopyFields(%q): %v", s, err)
+			continue
+		}
+		if b, _ := json.Marshal(got); string(b) != want {
+			t.Errorf("ParseCopyFields(%q) = %s, want %s", s, b, want)
+		}
+	}
+
+	for _, s := range []string{"site", "site=", "=a", "site=site", "_time=a", "_stream=a", "_stream_id=a"} {
+		if got, err := ParseCopyFields(s); err == nil {
+			t.Errorf("ParseCopyFields(%q) = %v, want an error", s, got)
+		}
+	}
+}
+
+func TestParseExtraFields(t *testing.T) {
+	t.Parallel()
+
+	for s, want := range map[string]string{
+		"":                           "null",
+		" site = home , rack=a ,":    `[{"Name":"site","Value":"home"},{"Name":"rack","Value":"a"}]`,
+		"note=a=b":                   `[{"Name":"note","Value":"a=b"}]`,
+		`{"zone":"b, c","area":"a"}`: `[{"Name":"area","Value":"a"},{"Name":"zone","Value":"b, c"}]`,
+		`  {"site":"home"}  `:        `[{"Name":"site","Value":"home"}]`,
+	} {
+		got, err := ParseExtraFields(s)
+		if err != nil {
+			t.Errorf("ParseExtraFields(%q): %v", s, err)
+			continue
+		}
+		if b, _ := json.Marshal(got); string(b) != want {
+			t.Errorf("ParseExtraFields(%q) = %s, want %s", s, b, want)
+		}
+	}
+
+	// a comma in a value needs the JSON form: written plainly, what follows it is a field without a value
+	for _, s := range []string{"site", "=home", "site=", "note=a, b", "_time=now", "_stream=x", "_stream_id=x", "site=a,site=b", `{"a":1}`, `{"a":""}`, "{"} {
+		if got, err := ParseExtraFields(s); err == nil {
+			t.Errorf("ParseExtraFields(%q) = %v, want an error", s, got)
+		}
 	}
 }
 

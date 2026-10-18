@@ -36,6 +36,10 @@ services:
       - "SYSLOG_RELAY_STRIP_QUOTES=true"
       - "SYSLOG_RELAY_LOG=INFO"
       # - "SYSLOG_RELAY_STREAM_FIELDS=hostname,app_name"   # VictoriaLogs' own syslog list unless given
+      # a site field on every row: the UniFi site each Network event names, else the sender's network, else home
+      # - "SYSLOG_RELAY_COPY_FIELDS=site=cef.extension.UNIFIsite"
+      # - "SYSLOG_RELAY_SITE_NETWORKS=cabin=10.2.0.0/16"
+      # - "SYSLOG_RELAY_EXTRA_FIELDS=site=home"
       # - "SYSLOG_RELAY_TIMEZONE=America/Vancouver"        # the zone a time written without one is read in; Local is TZ's
       # - "SYSLOG_RELAY_QUEUE_SIZE=100000"                 # rows held while VictoriaLogs cannot be reached
       # - "SYSLOG_RELAY_LABELS=hostname=dock"              # labels on the relay's own readings

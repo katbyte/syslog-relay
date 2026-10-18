@@ -60,9 +60,10 @@ For the rows to hold what your VictoriaLogs stores by itself, give the relay the
 | `-syslog.useRemoteIP` | `SYSLOG_RELAY_USE_REMOTE_IP=true` |
 | `-syslog.streamFields` | `SYSLOG_RELAY_STREAM_FIELDS` |
 | `-syslog.timezone` | `SYSLOG_RELAY_TIMEZONE`, or `TZ` for the container |
+| `-syslog.extraFields` | `SYSLOG_RELAY_EXTRA_FIELDS` |
 | `-syslog.msgField` ([the change](https://github.com/katbyte/VictoriaLogs/tree/syslog-msg-field)) | `SYSLOG_RELAY_MSG_FIELD` |
 
-`SYSLOG_RELAY_STRIP_QUOTES` has no VictoriaLogs flag to match: leave it off for rows that are the same as VictoriaLogs' own.
+`SYSLOG_RELAY_STRIP_QUOTES`, `SYSLOG_RELAY_COPY_FIELDS` and `SYSLOG_RELAY_SITE_NETWORKS` have no VictoriaLogs flag to match: leave them off for rows that are the same as VictoriaLogs' own.
 
 A list of fields can be written with commas, `message,cef.extension.msg`, or as the JSON list VictoriaLogs takes, `["message","cef.extension.msg"]`.
 
@@ -81,6 +82,9 @@ Only `SYSLOG_RELAY_LOGS_URL` has to be given. Each can be a flag, an environment
 | `SYSLOG_RELAY_USE_LOCAL_TIMESTAMP` | `--use-local-timestamp` | `false` | store the time a line arrived, keeping the one written in it as `timestamp` |
 | `SYSLOG_RELAY_USE_REMOTE_IP` | `--use-remote-ip` | `false` | record the sender's address in `remote_ip` |
 | `SYSLOG_RELAY_STRIP_QUOTES` | `--strip-quotes` | `false` | take off the double quotes around a message, which UniFi Protect puts around every one |
+| `SYSLOG_RELAY_EXTRA_FIELDS` | `--extra-fields` | none | fields to add to every row, as `name=value,name=value` or a JSON object; each replaces any field of that name in the line |
+| `SYSLOG_RELAY_COPY_FIELDS` | `--copy-fields` | none | fields to give the value of others, as `to=from,to=from`: see [Copying a field](#copying-a-field) |
+| `SYSLOG_RELAY_SITE_NETWORKS` | `--site-networks` | none | the site each line comes from, by the network its sender is in, as `site=network,site=network`: see [Which site a line came from](#which-site-a-line-came-from) |
 | `SYSLOG_RELAY_TIMEZONE` | `--timezone` | `Local` | the zone a time written without one is read in |
 | `SYSLOG_RELAY_QUEUE_SIZE` | `--queue-size` | `100000` | rows held while VictoriaLogs cannot be reached |
 | `SYSLOG_RELAY_RAW_FILE` | `--raw-file` | none | also keep every line received, unchanged, in this file |
@@ -98,6 +102,28 @@ MSG_FIELD=message,cef.extension.msg
 ```
 
 A flag or an environment variable wins over the file.
+
+## Copying a field
+
+`SYSLOG_RELAY_COPY_FIELDS` gives a field the value of another, written `to=from`: `source=cef.device_product`. The field copied from is kept, and the copy replaces any field of its name in the line. A field given more than once takes the first of its sources that the line has a value for: `site=cef.extension.UNIFIsite,site=cef.extension.UNIFIhost`.
+
+## Which site a line came from
+
+When UniFi at more than one place sends to the one relay, three settings together give every row a `site` field:
+
+```env
+SYSLOG_RELAY_COPY_FIELDS=site=cef.extension.UNIFIsite
+SYSLOG_RELAY_SITE_NETWORKS=cabin=10.2.0.0/16,cabin=203.0.113.7
+SYSLOG_RELAY_EXTRA_FIELDS=site=home
+```
+
+1. **The site UniFi names.** A UniFi controller that runs several sites sends every site's events from its own address, but names the site in each UniFi Network event's `cef.extension.UNIFIsite`. Copied, it wins over the other two.
+2. **The network the sender is in.** For lines that name no site: a gateway's own logs, a switch's, an access point's. The most specific network holding the sender wins, and a network can be a single address, such as a gateway reached over a tunnel that arrives from its public address.
+3. **The rest.** `SYSLOG_RELAY_EXTRA_FIELDS` names the site of a line neither of the others does.
+
+The network goes by the address each line arrives from, as `remote_ip` records it. Check that `remote_ip` holds the senders' own addresses: a line that reaches the relay through something that puts its own address on it, such as a proxy or a NAT, would be named for that instead.
+
+To keep each site's logs in streams of their own, add `site` to `SYSLOG_RELAY_STREAM_FIELDS`.
 
 ## Its own readings
 
