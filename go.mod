@@ -1,11 +1,11 @@
 module github.com/katbyte/syslog-relay
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/VictoriaMetrics/VictoriaLogs v1.52.2-0.20261001104708-915d91904bf7
-	github.com/VictoriaMetrics/VictoriaMetrics v1.152.1-0.20260924162003-018bc7808882
-	github.com/gookit/color v1.6.1
+	github.com/VictoriaMetrics/VictoriaMetrics v1.154.0
+	github.com/gookit/color v1.6.2
 	github.com/katbyte/go-kt v0.9.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/spf13/cobra v1.10.2
@@ -14,8 +14,8 @@ require (
 )
 
 require (
-	github.com/VictoriaMetrics/metrics v1.44.0 // indirect
-	github.com/VictoriaMetrics/metricsql v0.87.4 // indirect
+	github.com/VictoriaMetrics/metrics v1.44.1 // indirect
+	github.com/VictoriaMetrics/metricsql v0.87.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
